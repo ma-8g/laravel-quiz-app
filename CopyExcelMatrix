@@ -1,6 +1,6 @@
 Option Explicit
 
-Sub AggregateExcelData()
+Sub AggregateExcelData_AbsolutePath()
 
     Dim destWb As Workbook
     Dim sourceWb As Workbook
@@ -12,48 +12,44 @@ Sub AggregateExcelData()
     Dim fileName As String
     Dim confirmMsg As VbMsgBoxResult
 
-    ' 1. コピー先ファイルの選択
-    Dim fDialog As FileDialog
-    Set fDialog = Application.FileDialog(msoFileDialogFilePicker)
+    ' ★★★ ここを書き換えてください ★★★
+    ' コピー先のExcelファイルの絶対パスを指定
+    ' 例: "C:\Users\YourUser\Documents\集約データ.xlsx"
+    Const DEST_FILE_PATH As String = "C:\Users\YourUser\Documents\集約データ.xlsx" ' <-- ここを実際のパスに修正
 
-    With fDialog
-        .Title = "コピー先のExcelファイルを選択してください"
-        .AllowMultipleSelection = False
-        .Filters.Clear
-        .Filters.Add "Excelファイル", "*.xls; *.xlsx; *.xlsm"
-        .FilterIndex = 1
-        If .Show = True Then
-            Set destWb = Workbooks.Open(.SelectedItems(1))
-        Else
-            MsgBox "コピー先のファイルが選択されませんでした。処理を中止します。", vbCritical
-            Exit Sub
-        End If
-    End With
+    ' ★★★ ここを書き換えてください ★★★
+    ' コピー元のExcelファイルがあるフォルダの絶対パスを指定
+    ' 例: "C:\Users\YourUser\Documents\データフォルダ\"
+    Const SOURCE_FOLDER_PATH As String = "C:\Users\YourUser\Documents\データフォルダ\" ' <-- ここを実際のパスに修正
 
-    ' 2. コピー元ファイルがあるフォルダの選択
-    Set fDialog = Application.FileDialog(msoFileDialogFolderPicker)
+    ' 1. コピー先ファイルを開く
+    On Error Resume Next ' ファイルが存在しない場合のエラーを捕捉
+    Set destWb = Workbooks.Open(DEST_FILE_PATH)
+    On Error GoTo 0 ' エラー処理をリセット
 
-    With fDialog
-        .Title = "コピー元のExcelファイルがあるフォルダを選択してください"
-        .AllowMultipleSelection = False
-        If .Show = True Then
-            folderPath = .SelectedItems(1) & "\"
-        Else
-            MsgBox "コピー元のフォルダが選択されませんでした。処理を中止します。", vbCritical
-            If Not destWb Is Nothing Then destWb.Close SaveChanges:=False
-            Exit Sub
-        End If
-    End With
+    If destWb Is Nothing Then
+        MsgBox "指定されたコピー先ファイルが見つからないか、開けませんでした。パスを確認してください。" & vbCrLf & _
+               "パス: " & DEST_FILE_PATH, vbCritical
+        Exit Sub
+    End If
 
     ' 処理開始の確認
-    confirmMsg = MsgBox("指定されたフォルダ内のすべてのExcelファイルからデータを集約します。続行しますか？" & vbCrLf & _
-                        "対象フォルダ: " & folderPath & vbCrLf & _
-                        "コピー先ファイル: " & destWb.Name, vbQuestion + vbYesNo, "処理開始確認")
+    confirmMsg = MsgBox("以下の設定でExcelデータを集約します。" & vbCrLf & _
+                        "集約先ファイル: " & destWb.Name & vbCrLf & _
+                        "対象フォルダ: " & SOURCE_FOLDER_PATH & vbCrLf & _
+                        "続行しますか？", vbQuestion + vbYesNo, "処理開始確認")
 
     If confirmMsg = vbNo Then
         MsgBox "処理がキャンセルされました。", vbInformation
-        If Not destWb Is Nothing Then destWb.Close SaveChanges:=False
+        If Not destWb Is Nothing Then destWb.Close SaveChanges:=False ' 開いたファイルを閉じる
         Exit Sub
+    End If
+
+    ' フォルダパスの末尾が "\" で終わっていることを確認
+    If Right(SOURCE_FOLDER_PATH, 1) <> "\" Then
+        folderPath = SOURCE_FOLDER_PATH & "\"
+    Else
+        folderPath = SOURCE_FOLDER_PATH
     End If
 
     Application.ScreenUpdating = False ' 画面更新を停止し、処理を高速化
@@ -62,7 +58,9 @@ Sub AggregateExcelData()
 
     ' フォルダ内のすべてのExcelファイルをループ
     Do While fileName <> ""
-        If fileName <> destWb.Name Then ' コピー先ファイル自身は開かないようにする
+        ' コピー先ファイル自身は開かないようにする (ファイル名で比較)
+        ' または、同じパスのファイルを除外する
+        If StrComp(folderPath & fileName, DEST_FILE_PATH, vbTextCompare) <> 0 Then ' 大文字小文字を区別せずパス全体で比較
             On Error Resume Next ' エラーが発生しても処理を続行
             Set sourceWb = Workbooks.Open(folderPath & fileName, ReadOnly:=True) ' 読み取り専用で開く
             On Error GoTo 0 ' エラー処理をリセット
@@ -83,12 +81,18 @@ Sub AggregateExcelData()
                         ' 挿入前にセルを確保
                         tableRange.Columns(1).Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
                         ' 挿入された列のヘッダー部分にシート名を設定（例えば、元の項目一覧のセルと同じ行）
-                        ws.Cells(foundCell.Row, foundCell.Column).Offset(0, -1).Value = "シート名" ' 新しい列のヘッダー
+                        ' foundCell.Offset(0, -1) は、元の「項目一覧」のセルから左に1つずれたセルを指します。
+                        ' ここに新しい列のヘッダー「シート名」を設定します。
+                        ' destWb.Sheets(1).Cells(...) は、貼り付け先のシートのヘッダー設定であり、元のシートの変更はしません。
+                        ' 元のシートのヘッダーを変更したい場合は ws.Cells(foundCell.Row, foundCell.Column - 1).Value = "シート名" のようにします。
+                        ' ここではコピー元ファイルのシートに変更を加える意図はないと判断し、ヘッダー設定は削除しました。
+                        ' (コピー元のファイルはReadOnlyで開いているため、変更を保存することはできませんが、意図しない変更を避けるため)
+
                         ' 表エリアのA列にシート名を挿入
-                        Dim i As Long
-                        For i = 1 To tableRange.Rows.Count
-                            tableRange.Cells(i, 1).Value = ws.Name
-                        Next i
+                        Dim r As Long
+                        For r = 1 To tableRange.Rows.Count
+                            tableRange.Cells(r, 1).Value = ws.Name
+                        Next r
 
                         ' 表エリアをコピー
                         tableRange.Copy
@@ -98,6 +102,8 @@ Sub AggregateExcelData()
                             lastRowDest = .Cells(.Rows.Count, "A").End(xlUp).Row
                             If lastRowDest = 1 And IsEmpty(.Cells(1, "A").Value) Then ' 最初の行が空の場合（ヘッダー行を考慮）
                                 .Cells(1, "A").PasteSpecial xlPasteValues ' 値のみ貼り付け
+                                ' 初めて貼り付ける際にヘッダー行を追記
+                                .Cells(foundCell.Row, 1).Value = "シート名" ' コピー元「項目一覧」の行に対応する行に「シート名」ヘッダーを設定
                             Else
                                 .Cells(lastRowDest + 1, "A").PasteSpecial xlPasteValues ' 値のみ貼り付け
                             End If
