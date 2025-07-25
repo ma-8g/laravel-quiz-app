@@ -1,11 +1,12 @@
 Option Explicit
 
-Sub AggregateExcelData_AllFiles()
+Sub AggregateExcelData_CustomRange()
 
     Dim destWb As Workbook
     Dim sourceWb As Workbook
     Dim ws As Worksheet
-    Dim foundCell As Range
+    Dim startCell As Range ' 項目一覧のセル
+    Dim endCell As Range   ' イベント一覧のセル
     Dim tableRange As Range
     Dim lastRowDest As Long
     Dim folderPath As String
@@ -69,35 +70,55 @@ Sub AggregateExcelData_AllFiles()
                 ' 各シートをループ
                 For Each ws In sourceWb.Sheets
                     ' A列から「項目一覧」を検索
-                    Set foundCell = ws.Columns("A:A").Find(What:="項目一覧", LookIn:=xlValues, LookAt:=xlPart, MatchCase:=False)
+                    Set startCell = ws.Columns("A:A").Find(What:="項目一覧", LookIn:=xlValues, LookAt:=xlPart, MatchCase:=False)
 
-                    If Not foundCell Is Nothing Then
-                        ' 「項目一覧」が見つかった場合、その表エリアを特定
-                        ' foundCell (「項目一覧」があるセル) を含む行全体からEnd(xlToRight).End(xlDown)までを表の範囲と見なす
-                        Set tableRange = ws.Range(foundCell.EntireRow.Cells(1, 1), foundCell.End(xlToRight).End(xlDown))
+                    If Not startCell Is Nothing Then
+                        ' 「イベント一覧」を検索
+                        ' 「項目一覧」が見つかった位置より下を検索範囲とすると、より正確に目的の「イベント一覧」を見つけやすい
+                        Set endCell = ws.Range(startCell.Address & ":" & ws.Cells(ws.Rows.Count, "A").Address).Find( _
+                                        What:="イベント一覧", LookIn:=xlValues, LookAt:=xlPart, MatchCase:=False)
 
-                        ' 表エリアをコピー
-                        tableRange.Copy
+                        If Not endCell Is Nothing Then
+                            ' 「項目一覧」の行から「イベント一覧」の1行上までの範囲を特定
+                            ' 最初の行: startCell がある行のA列
+                            ' 最後の行: endCell がある行の1つ上の行の最終列 (End(xlToRight))
+                            Set tableRange = ws.Range(startCell.EntireRow.Cells(1, 1), endCell.EntireRow.Cells(1, endCell.Column).Offset(-1, 0).End(xlToRight))
 
-                        ' コピー先ファイルにはりつけ
-                        With destWb.Sheets(1) ' コピー先ファイルの最初のシートに貼り付け
-                            lastRowDest = .Cells(.Rows.Count, "A").End(xlUp).Row
+                            ' もし「イベント一覧」の行が「項目一覧」の行より上だった場合（誤検出やデータ構造の不備）はスキップ
+                            If tableRange.Rows.Count > 0 And startCell.Row < endCell.Row Then
+                                ' 表エリアをコピー
+                                tableRange.Copy
 
-                            ' 既存データが全くない場合 (A1セルも空の場合)
-                            If lastRowDest = 1 And IsEmpty(.Cells(1, "A").Value) Then
-                                ' A1セルにシート名を記入
-                                .Cells(1, "A").Value = "シート名: " & ws.Name
-                                ' 次の行から表データを貼り付け (項目一覧の行から含む)
-                                .Cells(2, "A").PasteSpecial xlPasteValues ' 値のみ貼り付け
+                                ' コピー先ファイルにはりつけ
+                                With destWb.Sheets(1) ' コピー先ファイルの最初のシートに貼り付け
+                                    lastRowDest = .Cells(.Rows.Count, "A").End(xlUp).Row
+
+                                    ' 既存データが全くない場合 (A1セルも空の場合)
+                                    If lastRowDest = 1 And IsEmpty(.Cells(1, "A").Value) Then
+                                        ' A1セルにシート名を記入
+                                        .Cells(1, "A").Value = "シート名: " & ws.Name
+                                        ' 次の行から表データを貼り付け
+                                        .Cells(2, "A").PasteSpecial xlPasteValues ' 値のみ貼り付け
+                                    Else
+                                        ' 既存データがある場合、一番下の行の次々行にシート名を記入
+                                        ' 例: lastRowDest が 10 なら 11 行目を空けて 12 行目にシート名、13 行目からデータ
+                                        .Cells(lastRowDest + 2, "A").Value = "シート名: " & ws.Name
+                                        ' その次の行から表データを貼り付け
+                                        .Cells(lastRowDest + 3, "A").PasteSpecial xlPasteValues ' 値のみ貼り付け
+                                    End If
+                                End With
+                                Application.CutCopyMode = False ' コピーモードを解除
                             Else
-                                ' 既存データがある場合、一番下の行の次々行にシート名を記入
-                                ' 例: lastRowDest が 10 なら 11 行目を空けて 12 行目にシート名、13 行目からデータ
-                                .Cells(lastRowDest + 2, "A").Value = "シート名: " & ws.Name
-                                ' その次の行から表データを貼り付け
-                                .Cells(lastRowDest + 3, "A").PasteSpecial xlPasteValues ' 値のみ貼り付け
+                                ' 「項目一覧」または「イベント一覧」の範囲に問題がある場合
+                                Debug.Print "警告: シート「" & ws.Name & "」の「項目一覧」と「イベント一覧」の範囲が不正です。スキップします。"
                             End If
-                        End With
-                        Application.CutCopyMode = False ' コピーモードを解除
+                        Else
+                            ' 「イベント一覧」が見つからなかった場合
+                            Debug.Print "警告: シート「" & ws.Name & "」で「イベント一覧」が見つかりませんでした。スキップします。"
+                        End If
+                    Else
+                        ' 「項目一覧」が見つからなかった場合
+                        Debug.Print "警告: シート「" & ws.Name & "」で「項目一覧」が見つかりませんでした。スキップします。"
                     End If
                 Next ws
                 sourceWb.Close SaveChanges:=False ' コピー元ファイルを保存せずに閉じる
