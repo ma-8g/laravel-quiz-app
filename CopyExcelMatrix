@@ -1,6 +1,6 @@
 Option Explicit
 
-Sub AggregateExcelData_AbsolutePath_Rev2()
+Sub AggregateExcelData_AllFiles()
 
     Dim destWb As Workbook
     Dim sourceWb As Workbook
@@ -12,15 +12,15 @@ Sub AggregateExcelData_AbsolutePath_Rev2()
     Dim fileName As String
     Dim confirmMsg As VbMsgBoxResult
 
-    ' ★★★ ここを書き換えてください ★★★
+    ' --- ★★★ ここを書き換えてください ★★★ ---
     ' コピー先のExcelファイルの絶対パスを指定
     ' 例: "C:\Users\YourUser\Documents\集約データ.xlsx"
     Const DEST_FILE_PATH As String = "C:\Users\YourUser\Documents\集約データ.xlsx" ' <-- ここを実際のパスに修正
 
-    ' ★★★ ここを書き換えてください ★★★
     ' コピー元のExcelファイルがあるフォルダの絶対パスを指定
     ' 例: "C:\Users\YourUser\Documents\データフォルダ\"
     Const SOURCE_FOLDER_PATH As String = "C:\Users\YourUser\Documents\データフォルダ\" ' <-- ここを実際のパスに修正
+    ' --------------------------------------------
 
     ' 1. コピー先ファイルを開く
     On Error Resume Next ' ファイルが存在しない場合のエラーを捕捉
@@ -28,7 +28,7 @@ Sub AggregateExcelData_AbsolutePath_Rev2()
     On Error GoTo 0 ' エラー処理をリセット
 
     If destWb Is Nothing Then
-        MsgBox "指定されたコピー先ファイルが見つからないか、開けませんでした。パスを確認してください。" & vbCritical & vbCrLf & _
+        MsgBox "指定されたコピー先ファイルが見つからないか、開けませんでした。パスを確認してください。" & vbCrLf & _
                "パス: " & DEST_FILE_PATH, vbCritical
         Exit Sub
     End If
@@ -54,12 +54,13 @@ Sub AggregateExcelData_AbsolutePath_Rev2()
 
     Application.ScreenUpdating = False ' 画面更新を停止し、処理を高速化
 
-    fileName = Dir(folderPath & "*.xls*") ' フォルダ内の最初のExcelファイルを取得
+    ' フォルダ内の最初のExcelファイルを取得
+    fileName = Dir(folderPath & "*.xls*")
 
     ' フォルダ内のすべてのExcelファイルをループ
     Do While fileName <> ""
-        ' コピー先ファイル自身は開かないようにする (ファイル名で比較)
-        If StrComp(folderPath & fileName, DEST_FILE_PATH, vbTextCompare) <> 0 Then ' 大文字小文字を区別せずパス全体で比較
+        ' コピー先ファイル自身は開かないようにする (ファイル名とパスで比較)
+        If StrComp(folderPath & fileName, DEST_FILE_PATH, vbTextCompare) <> 0 Then
             On Error Resume Next ' エラーが発生しても処理を続行
             Set sourceWb = Workbooks.Open(folderPath & fileName, ReadOnly:=True) ' 読み取り専用で開く
             On Error GoTo 0 ' エラー処理をリセット
@@ -72,10 +73,8 @@ Sub AggregateExcelData_AbsolutePath_Rev2()
 
                     If Not foundCell Is Nothing Then
                         ' 「項目一覧」が見つかった場合、その表エリアを特定
-                        ' ここでは「項目一覧」があるセルからEnd(xlToRight)とEnd(xlDown)で表の範囲を想定
-                        ' 実際の表の構造に合わせて調整してください。
-                        ' foundCell.Offset(1, 0) から開始して「項目一覧」行自体は含まない
-                        Set tableRange = ws.Range(foundCell.Offset(1, 0), foundCell.End(xlToRight).End(xlDown))
+                        ' foundCell (「項目一覧」があるセル) を含む行全体からEnd(xlToRight).End(xlDown)までを表の範囲と見なす
+                        Set tableRange = ws.Range(foundCell.EntireRow.Cells(1, 1), foundCell.End(xlToRight).End(xlDown))
 
                         ' 表エリアをコピー
                         tableRange.Copy
@@ -88,7 +87,7 @@ Sub AggregateExcelData_AbsolutePath_Rev2()
                             If lastRowDest = 1 And IsEmpty(.Cells(1, "A").Value) Then
                                 ' A1セルにシート名を記入
                                 .Cells(1, "A").Value = "シート名: " & ws.Name
-                                ' 次の行から表データを貼り付け
+                                ' 次の行から表データを貼り付け (項目一覧の行から含む)
                                 .Cells(2, "A").PasteSpecial xlPasteValues ' 値のみ貼り付け
                             Else
                                 ' 既存データがある場合、一番下の行の次々行にシート名を記入
@@ -106,7 +105,8 @@ Sub AggregateExcelData_AbsolutePath_Rev2()
                 MsgBox fileName & " のオープンに失敗しました。スキップします。", vbExclamation
             End If
         End If
-        fileName = Dir ' 次のExcelファイルを取得
+        ' 次のExcelファイルを取得
+        fileName = Dir
     Loop
 
     Application.ScreenUpdating = True ' 画面更新を再開
