@@ -1,0 +1,119 @@
+Option Explicit
+
+Sub AggregateExcelData()
+
+    Dim destWb As Workbook
+    Dim sourceWb As Workbook
+    Dim ws As Worksheet
+    Dim foundCell As Range
+    Dim tableRange As Range
+    Dim lastRowDest As Long
+    Dim folderPath As String
+    Dim fileName As String
+    Dim confirmMsg As VbMsgBoxResult
+
+    ' 1. コピー先ファイルの選択
+    Dim fDialog As FileDialog
+    Set fDialog = Application.FileDialog(msoFileDialogFilePicker)
+
+    With fDialog
+        .Title = "コピー先のExcelファイルを選択してください"
+        .AllowMultipleSelection = False
+        .Filters.Clear
+        .Filters.Add "Excelファイル", "*.xls; *.xlsx; *.xlsm"
+        .FilterIndex = 1
+        If .Show = True Then
+            Set destWb = Workbooks.Open(.SelectedItems(1))
+        Else
+            MsgBox "コピー先のファイルが選択されませんでした。処理を中止します。", vbCritical
+            Exit Sub
+        End If
+    End With
+
+    ' 2. コピー元ファイルがあるフォルダの選択
+    Set fDialog = Application.FileDialog(msoFileDialogFolderPicker)
+
+    With fDialog
+        .Title = "コピー元のExcelファイルがあるフォルダを選択してください"
+        .AllowMultipleSelection = False
+        If .Show = True Then
+            folderPath = .SelectedItems(1) & "\"
+        Else
+            MsgBox "コピー元のフォルダが選択されませんでした。処理を中止します。", vbCritical
+            If Not destWb Is Nothing Then destWb.Close SaveChanges:=False
+            Exit Sub
+        End If
+    End With
+
+    ' 処理開始の確認
+    confirmMsg = MsgBox("指定されたフォルダ内のすべてのExcelファイルからデータを集約します。続行しますか？" & vbCrLf & _
+                        "対象フォルダ: " & folderPath & vbCrLf & _
+                        "コピー先ファイル: " & destWb.Name, vbQuestion + vbYesNo, "処理開始確認")
+
+    If confirmMsg = vbNo Then
+        MsgBox "処理がキャンセルされました。", vbInformation
+        If Not destWb Is Nothing Then destWb.Close SaveChanges:=False
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False ' 画面更新を停止し、処理を高速化
+
+    fileName = Dir(folderPath & "*.xls*") ' フォルダ内の最初のExcelファイルを取得
+
+    ' フォルダ内のすべてのExcelファイルをループ
+    Do While fileName <> ""
+        If fileName <> destWb.Name Then ' コピー先ファイル自身は開かないようにする
+            On Error Resume Next ' エラーが発生しても処理を続行
+            Set sourceWb = Workbooks.Open(folderPath & fileName, ReadOnly:=True) ' 読み取り専用で開く
+            On Error GoTo 0 ' エラー処理をリセット
+
+            If Not sourceWb Is Nothing Then
+                ' 各シートをループ
+                For Each ws In sourceWb.Sheets
+                    ' A列から「項目一覧」を検索
+                    Set foundCell = ws.Columns("A:A").Find(What:="項目一覧", LookIn:=xlValues, LookAt:=xlPart, MatchCase:=False)
+
+                    If Not foundCell Is Nothing Then
+                        ' 「項目一覧」が見つかった場合、その表エリアを特定
+                        ' ここでは「項目一覧」があるセルからEnd(xlToRight)とEnd(xlDown)で表の範囲を想定
+                        ' 実際の表の構造に合わせて調整してください。
+                        Set tableRange = ws.Range(foundCell.Offset(1, 0), foundCell.End(xlToRight).End(xlDown))
+
+                        ' 表エリアのA列にシート名を挿入（既存のデータをずらす）
+                        ' 挿入前にセルを確保
+                        tableRange.Columns(1).Insert Shift:=xlToRight, CopyOrigin:=xlFormatFromLeftOrAbove
+                        ' 挿入された列のヘッダー部分にシート名を設定（例えば、元の項目一覧のセルと同じ行）
+                        ws.Cells(foundCell.Row, foundCell.Column).Offset(0, -1).Value = "シート名" ' 新しい列のヘッダー
+                        ' 表エリアのA列にシート名を挿入
+                        Dim i As Long
+                        For i = 1 To tableRange.Rows.Count
+                            tableRange.Cells(i, 1).Value = ws.Name
+                        Next i
+
+                        ' 表エリアをコピー
+                        tableRange.Copy
+
+                        ' コピー先ファイルにはりつけ
+                        With destWb.Sheets(1) ' コピー先ファイルの最初のシートに貼り付け
+                            lastRowDest = .Cells(.Rows.Count, "A").End(xlUp).Row
+                            If lastRowDest = 1 And IsEmpty(.Cells(1, "A").Value) Then ' 最初の行が空の場合（ヘッダー行を考慮）
+                                .Cells(1, "A").PasteSpecial xlPasteValues ' 値のみ貼り付け
+                            Else
+                                .Cells(lastRowDest + 1, "A").PasteSpecial xlPasteValues ' 値のみ貼り付け
+                            End If
+                        End With
+                        Application.CutCopyMode = False ' コピーモードを解除
+                    End If
+                Next ws
+                sourceWb.Close SaveChanges:=False ' コピー元ファイルを保存せずに閉じる
+            Else
+                MsgBox fileName & " のオープンに失敗しました。スキップします。", vbExclamation
+            End If
+        End If
+        fileName = Dir ' 次のExcelファイルを取得
+    Loop
+
+    Application.ScreenUpdating = True ' 画面更新を再開
+
+    MsgBox "データの集約が完了しました。", vbInformation
+End Sub
