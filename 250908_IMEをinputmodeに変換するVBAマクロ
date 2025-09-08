@@ -1,88 +1,115 @@
 Option Explicit
 
-Sub フォルダ内ファイル変換処理()
+Sub フォルダ内ファイル処理()
 
-    Dim fDialog As FileDialog
-    Dim folderPath As String
-    Dim fso As Object, f As Object, fFile As Object
-    Dim wb As Workbook, ws As Worksheet
-    Dim r As Range, cell As Range
+    Dim fso As Object
+    Dim folder As Object
+    Dim file As Object
+    Dim wb As Workbook
+    Dim ws As Worksheet
+    Dim execWs As Worksheet
+    Dim targetFolder As String
     Dim lastRow As Long
-    Dim logWs As Worksheet
-    Dim logRow As Long
-    Dim changeText As String
-    Dim no As Long
-    Dim beforeText As String, afterText As String
+    Dim writeRow As Long
+    Dim checkCol As Range
+    Dim cell As Range
+    Dim sheetName As String
+    Dim changeLog As String
+    Dim execNo As Long
     
-    ' 実行内容シートをセット
-    Set logWs = ThisWorkbook.Sheets("実行内容")
-    logRow = logWs.Cells(logWs.Rows.Count, "A").End(xlUp).Row + 1
-    no = 1
+    ' 実行内容を記録するシート
+    Set execWs = ThisWorkbook.Sheets("実行内容")
+    execNo = Application.WorksheetFunction.Max(1, _
+              Application.WorksheetFunction.Max(execWs.Cells(execWs.Rows.Count, 1).End(xlUp).Value, 0))
     
-    ' フォルダ選択ダイアログ
-    Set fDialog = Application.FileDialog(msoFileDialogFolderPicker)
-    If fDialog.Show <> -1 Then Exit Sub
-    folderPath = fDialog.SelectedItems(1)
+    ' フォルダを指定
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "処理対象のフォルダを選択してください"
+        If .Show = -1 Then
+            targetFolder = .SelectedItems(1)
+        Else
+            MsgBox "処理をキャンセルしました"
+            Exit Sub
+        End If
+    End With
     
-    ' FSOでフォルダ内ファイルを処理
     Set fso = CreateObject("Scripting.FileSystemObject")
-    Set f = fso.GetFolder(folderPath)
+    Set folder = fso.GetFolder(targetFolder)
     
     Application.ScreenUpdating = False
-    Application.DisplayAlerts = False
+    Application.EnableEvents = False
     
-    For Each fFile In f.Files
-        If LCase(Right(fFile.Name, 4)) = "xlsx" Or LCase(Right(fFile.Name, 3)) = "xls" Then
-            Set wb = Workbooks.Open(fFile.Path)
+    ' フォルダ内のExcelファイルを順次処理
+    For Each file In folder.Files
+        If (LCase(fso.GetExtensionName(file.Name)) = "xls" Or _
+            LCase(fso.GetExtensionName(file.Name)) = "xlsx") _
+            And file.Name <> ThisWorkbook.Name Then
             
-            For Each ws In wb.Worksheets
+            Set wb = Workbooks.Open(file.Path)
+            
+            ' シート名に「画面」を含むシートを処理
+            For Each ws In wb.Sheets
                 If InStr(ws.Name, "画面") > 0 Then
-                    lastRow = ws.Cells(ws.Rows.Count, "R").End(xlUp).Row
-                    Set r = ws.Range("R1:R" & lastRow)
+                    sheetName = ws.Name
+                    changeLog = ""
                     
-                    For Each cell In r
-                        If cell.Value <> "" Then
-                            beforeText = cell.Value
-                            afterText = ""
-                            changeText = ""
-                            
-                            Select Case LCase(cell.Value)
-                                Case "disabled", "inactive"
-                                    afterText = "numeric"
-                                    cell.Font.Color = vbRed
-                                Case "active"
-                                    afterText = "text"
-                                    cell.Font.Color = vbRed
-                                Case "ime"
-                                    afterText = "inputmode"
-                                    ' IMEの場合は色指定なし
-                            End Select
-                            
-                            If afterText <> "" Then
-                                cell.Value = afterText
-                                changeText = "「" & beforeText & "」→「" & afterText & "」"
-                                
-                                ' ログ書き込み
-                                logWs.Cells(logRow, 1).Value = no
-                                logWs.Cells(logRow, 2).Value = wb.Name
-                                logWs.Cells(logRow, 3).Value = ws.Name
-                                logWs.Cells(logRow, 4).Value = changeText
-                                
-                                logRow = logRow + 1
-                                no = no + 1
-                            End If
+                    ' R列の最終行を取得
+                    lastRow = ws.Cells(ws.Rows.Count, "R").End(xlUp).Row
+                    Set checkCol = ws.Range("R1:R" & lastRow)
+                    
+                    For Each cell In checkCol
+                        If cell.Value = "disabled" Then
+                            cell.Value = "numeric"
+                            cell.Font.Color = vbRed
+                            changeLog = changeLog & "disabled→numeric;"
+                        ElseIf cell.Value = "inactive" Then
+                            cell.Value = "numeric"
+                            cell.Font.Color = vbRed
+                            changeLog = changeLog & "inactive→numeric;"
+                        ElseIf cell.Value = "active" Then
+                            cell.Value = "text"
+                            cell.Font.Color = vbRed
+                            changeLog = changeLog & "active→text;"
+                        ElseIf cell.Value = "IME" Then
+                            cell.Value = "inputmode"
+                            changeLog = changeLog & "IME→inputmode;"
                         End If
                     Next cell
+                    
+                    ' 更新履歴シート更新
+                    On Error Resume Next
+                    Set ws = wb.Sheets("更新履歴")
+                    On Error GoTo 0
+                    
+                    If Not ws Is Nothing Then
+                        lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+                        ws.Cells(lastRow + 1, "A").Value = ws.Cells(lastRow, "A").Value + 1
+                        ws.Cells(lastRow + 1, "B").Value = Date
+                        ws.Cells(lastRow + 1, "C").Value = "Ａ山Ｂ彦"
+                        ws.Cells(lastRow + 1, "D").Value = sheetName
+                        ws.Cells(lastRow + 1, "E").Value = "IMEをinputmodeに変更"
+                    End If
+                    
+                    ' 実行内容シートに記録
+                    If changeLog <> "" Then
+                        writeRow = execWs.Cells(execWs.Rows.Count, 1).End(xlUp).Row + 1
+                        execWs.Cells(writeRow, 1).Value = execNo
+                        execWs.Cells(writeRow, 2).Value = wb.Name
+                        execWs.Cells(writeRow, 3).Value = sheetName
+                        execWs.Cells(writeRow, 4).Value = changeLog
+                        execNo = execNo + 1
+                    End If
+                    
                 End If
             Next ws
             
             wb.Close SaveChanges:=True
         End If
-    Next fFile
+    Next file
     
-    Application.DisplayAlerts = True
     Application.ScreenUpdating = True
+    Application.EnableEvents = True
     
-    MsgBox "処理が完了しました。", vbInformation
-
+    MsgBox "処理が完了しました"
+    
 End Sub
