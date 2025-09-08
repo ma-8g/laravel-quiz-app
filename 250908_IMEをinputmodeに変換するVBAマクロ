@@ -1,0 +1,62 @@
+Sub ConvertExcelFiles()
+    Dim fso As Object
+    Dim folder As Object
+    Dim file As Object
+    Dim wb As Workbook
+    Dim ws As Worksheet
+    Dim targetFolder As String
+    Dim lastRow As Long
+    Dim rng As Range, cell As Range
+    
+    ' ★変換対象フォルダを指定してください
+    targetFolder = "C:\YourFolderPath"
+    
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set folder = fso.GetFolder(targetFolder)
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    ' フォルダ内の全ファイルをチェック
+    For Each file In folder.Files
+        If LCase(fso.GetExtensionName(file.Name)) = "xls" Or _
+           LCase(fso.GetExtensionName(file.Name)) = "xlsx" Then
+           
+           Set wb = Workbooks.Open(file.Path)
+           
+           ' シートを順番に確認
+           For Each ws In wb.Worksheets
+               If InStr(ws.Name, "画面") > 0 Then
+                   lastRow = ws.Cells(ws.Rows.Count, "R").End(xlUp).Row
+                   Set rng = ws.Range("R1:R" & lastRow)
+                   
+                   For Each cell In rng
+                       If cell.Value <> "" Then
+                           Select Case LCase(cell.Value)
+                               Case "disabled"
+                                   cell.Value = "numeric"
+                                   cell.Font.Color = vbRed
+                               Case "inactive"
+                                   cell.Value = "numeric"
+                                   cell.Font.Color = vbRed
+                               Case "active"
+                                   cell.Value = "text"
+                                   cell.Font.Color = vbRed
+                               Case "ime"
+                                   cell.Value = "inputmode"
+                                   ' IME変換時は色変更なし
+                           End Select
+                       End If
+                   Next cell
+               End If
+           Next ws
+           
+           wb.Close SaveChanges:=True
+        End If
+    Next file
+    
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    
+    MsgBox "変換処理が完了しました！", vbInformation
+End Sub
