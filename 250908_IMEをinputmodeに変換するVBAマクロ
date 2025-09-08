@@ -2,101 +2,130 @@ Option Explicit
 
 Sub 変換処理実行()
 
-    Dim wb As Workbook
-    Dim ws As Worksheet
-    Dim fso As Object
-    Dim fld As Object
-    Dim fil As Object
-    Dim myPath As String
-    Dim lastRow As Long
-    Dim tgtRow As Long
-    Dim execWs As Worksheet
-    Dim cnt As Long
-    Dim c As Range
-    Dim newVal As String
-    Dim logMsg As String
-    Dim histWs As Worksheet
-    Dim histRow As Long
+    Dim targetFolder As String
+    Dim fso As Object, f As Object, file As Object
+    Dim wb As Workbook, ws As Worksheet, wsLog As Worksheet
+    Dim lastRow As Long, r As Long
+    Dim cell As Range
+    Dim logRow As Long
+    Dim no As Long
+    Dim today As String
+    Dim changedText As String
     
-    '--- 実行結果記録用シート
-    Set execWs = ThisWorkbook.Sheets("実行内容")
-    cnt = execWs.Cells(Rows.Count, 1).End(xlUp).Row
-    If cnt = 1 And execWs.Range("A1").Value = "" Then cnt = 0
+    '★フォルダ選択ダイアログ
+    With Application.FileDialog(msoFileDialogFolderPicker)
+        .Title = "対象フォルダを選択してください"
+        If .Show <> -1 Then Exit Sub
+        targetFolder = .SelectedItems(1)
+    End With
     
-    '--- 対象フォルダ指定（適宜変更）
-    myPath = "C:\Temp\Test"  ' ★変更してください
+    '実行ログ用シート
+    On Error Resume Next
+    Set wsLog = ThisWorkbook.Sheets("実行内容")
+    If wsLog Is Nothing Then
+        Set wsLog = ThisWorkbook.Sheets.Add
+        wsLog.Name = "実行内容"
+        wsLog.Range("A1:D1").Value = Array("No", "ブック名", "シート名", "変更内容")
+    End If
+    On Error GoTo 0
     
+    logRow = wsLog.Cells(wsLog.Rows.Count, 1).End(xlUp).Row + 1
+    no = 1
+    today = Format(Date, "yyyy/mm/dd")
+    
+    'ファイル操作
     Set fso = CreateObject("Scripting.FileSystemObject")
-    Set fld = fso.GetFolder(myPath)
+    Set f = fso.GetFolder(targetFolder)
     
-    For Each fil In fld.Files
-        If (Right(fil.Name, 4) = "xlsx" Or Right(fil.Name, 3) = "xls") And fil.Name <> ThisWorkbook.Name Then
+    For Each file In f.Files
+        If LCase(fso.GetExtensionName(file.Name)) = "xls" Or _
+           LCase(fso.GetExtensionName(file.Name)) = "xlsx" Then
             
-            Set wb = Workbooks.Open(fil.Path)
+            Set wb = Workbooks.Open(file.Path)
             
-            '--- シート名に「画面」を含むシート処理
-            For Each ws In wb.Worksheets
+            'シートを順に確認
+            For Each ws In wb.Sheets
                 If InStr(ws.Name, "画面") > 0 Then
                     
                     lastRow = ws.Cells(ws.Rows.Count, "R").End(xlUp).Row
-                    For Each c In ws.Range("R1:R" & lastRow)
-                        If c.Value <> "" Then
-                            newVal = ""
-                            logMsg = ""
-                            
-                            Select Case LCase(c.Value)
+                    For r = 1 To lastRow
+                        Set cell = ws.Cells(r, "R")
+                        If Not IsEmpty(cell.Value) Then
+                            Select Case cell.Value
+                                Case "IME"
+                                    cell.Value = "inputmode"
+                                    cell.Font.Color = RGB(0, 176, 240)
+                                    
+                                    'コメント削除＆作成
+                                    On Error Resume Next
+                                    cell.ClearComments
+                                    On Error GoTo 0
+                                    cell.AddComment "「text」（全角入力）「numeric」（半角入力）から選択"
+                                    cell.Comment.Shape.Height = Application.CentimetersToPoints(1.5)
+                                    cell.Comment.Shape.Width = Application.CentimetersToPoints(10)
+                                    
+                                    changedText = "IME → inputmode"
+                                
                                 Case "disabled"
-                                    newVal = "numeric"
-                                    c.Font.Color = vbRed
-                                    logMsg = "disabled → numeric"
+                                    cell.Value = "numeric"
+                                    cell.Font.Color = vbRed
+                                    changedText = "disabled → numeric"
+                                
                                 Case "inactive"
-                                    newVal = "numeric"
-                                    c.Font.Color = vbRed
-                                    logMsg = "inactive → numeric"
+                                    cell.Value = "numeric"
+                                    cell.Font.Color = vbRed
+                                    changedText = "inactive → numeric"
+                                
                                 Case "active"
-                                    newVal = "text"
-                                    c.Font.Color = vbRed
-                                    logMsg = "active → text"
-                                Case "ime"
-                                    newVal = "inputmode"
-                                    c.Font.Color = vbBlue
-                                    logMsg = "IME → inputmode"
+                                    cell.Value = "text"
+                                    cell.Font.Color = vbRed
+                                    changedText = "active → text"
+                                
+                                Case Else
+                                    changedText = ""
                             End Select
                             
-                            If newVal <> "" Then
-                                c.Value = newVal
-                                cnt = cnt + 1
-                                execWs.Cells(cnt, 1).Value = cnt
-                                execWs.Cells(cnt, 2).Value = wb.Name
-                                execWs.Cells(cnt, 3).Value = ws.Name
-                                execWs.Cells(cnt, 4).Value = logMsg
+                            If changedText <> "" Then
+                                wsLog.Cells(logRow, 1).Value = no
+                                wsLog.Cells(logRow, 2).Value = wb.Name
+                                wsLog.Cells(logRow, 3).Value = ws.Name
+                                wsLog.Cells(logRow, 4).Value = changedText
+                                
+                                logRow = logRow + 1
+                                no = no + 1
                             End If
                         End If
-                    Next c
+                    Next r
                     
-                    '--- 更新履歴シート処理
+                    '更新履歴処理
+                    Dim wsHist As Worksheet
                     On Error Resume Next
-                    Set histWs = wb.Sheets("更新履歴")
+                    Set wsHist = wb.Sheets("更新履歴")
                     On Error GoTo 0
-                    If Not histWs Is Nothing Then
-                        histRow = histWs.Cells(histWs.Rows.Count, "B").End(xlUp).Row + 1
-                        histWs.Cells(histRow, 1).Value = histWs.Cells(histRow - 1, 1).Value + 1
-                        histWs.Cells(histRow, 2).Value = Format(Date, "yyyy/mm/dd")
-                        histWs.Cells(histRow, 3).Value = "Ａ山Ｂ彦"
-                        histWs.Cells(histRow, 4).Value = ws.Name
-                        histWs.Cells(histRow, 5).Value = "IMEをinputmodeに変更"
-                        histWs.Rows(histRow).Font.Color = vbRed
+                    
+                    If Not wsHist Is Nothing Then
+                        Dim lastHistRow As Long
+                        lastHistRow = wsHist.Cells(wsHist.Rows.Count, "B").End(xlUp).Row
+                        
+                        With wsHist
+                            .Cells(lastHistRow + 1, 1).Value = .Cells(lastHistRow, 1).Value + 1
+                            .Cells(lastHistRow + 1, 2).Value = today
+                            .Cells(lastHistRow + 1, 3).Value = "Ａ山Ｂ彦"
+                            .Cells(lastHistRow + 1, 4).Value = ws.Name
+                            .Cells(lastHistRow + 1, 5).Value = "IMEをinputmodeに変更"
+                            
+                            '赤字設定
+                            .Rows(lastHistRow + 1).Font.Color = vbRed
+                        End With
                     End If
                     
                 End If
             Next ws
             
             wb.Close SaveChanges:=True
-            Set histWs = Nothing
-            
         End If
-    Next fil
+    Next file
     
-    MsgBox "処理が完了しました。"
+    MsgBox "処理が完了しました", vbInformation
     
 End Sub
