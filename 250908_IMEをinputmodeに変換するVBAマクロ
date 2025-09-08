@@ -1,115 +1,102 @@
 Option Explicit
 
-Sub フォルダ内ファイル処理()
+Sub 変換処理実行()
 
-    Dim fso As Object
-    Dim folder As Object
-    Dim file As Object
     Dim wb As Workbook
     Dim ws As Worksheet
-    Dim execWs As Worksheet
-    Dim targetFolder As String
+    Dim fso As Object
+    Dim fld As Object
+    Dim fil As Object
+    Dim myPath As String
     Dim lastRow As Long
-    Dim writeRow As Long
-    Dim checkCol As Range
-    Dim cell As Range
-    Dim sheetName As String
-    Dim changeLog As String
-    Dim execNo As Long
+    Dim tgtRow As Long
+    Dim execWs As Worksheet
+    Dim cnt As Long
+    Dim c As Range
+    Dim newVal As String
+    Dim logMsg As String
+    Dim histWs As Worksheet
+    Dim histRow As Long
     
-    ' 実行内容を記録するシート
+    '--- 実行結果記録用シート
     Set execWs = ThisWorkbook.Sheets("実行内容")
-    execNo = Application.WorksheetFunction.Max(1, _
-              Application.WorksheetFunction.Max(execWs.Cells(execWs.Rows.Count, 1).End(xlUp).Value, 0))
+    cnt = execWs.Cells(Rows.Count, 1).End(xlUp).Row
+    If cnt = 1 And execWs.Range("A1").Value = "" Then cnt = 0
     
-    ' フォルダを指定
-    With Application.FileDialog(msoFileDialogFolderPicker)
-        .Title = "処理対象のフォルダを選択してください"
-        If .Show = -1 Then
-            targetFolder = .SelectedItems(1)
-        Else
-            MsgBox "処理をキャンセルしました"
-            Exit Sub
-        End If
-    End With
+    '--- 対象フォルダ指定（適宜変更）
+    myPath = "C:\Temp\Test"  ' ★変更してください
     
     Set fso = CreateObject("Scripting.FileSystemObject")
-    Set folder = fso.GetFolder(targetFolder)
+    Set fld = fso.GetFolder(myPath)
     
-    Application.ScreenUpdating = False
-    Application.EnableEvents = False
-    
-    ' フォルダ内のExcelファイルを順次処理
-    For Each file In folder.Files
-        If (LCase(fso.GetExtensionName(file.Name)) = "xls" Or _
-            LCase(fso.GetExtensionName(file.Name)) = "xlsx") _
-            And file.Name <> ThisWorkbook.Name Then
+    For Each fil In fld.Files
+        If (Right(fil.Name, 4) = "xlsx" Or Right(fil.Name, 3) = "xls") And fil.Name <> ThisWorkbook.Name Then
             
-            Set wb = Workbooks.Open(file.Path)
+            Set wb = Workbooks.Open(fil.Path)
             
-            ' シート名に「画面」を含むシートを処理
-            For Each ws In wb.Sheets
+            '--- シート名に「画面」を含むシート処理
+            For Each ws In wb.Worksheets
                 If InStr(ws.Name, "画面") > 0 Then
-                    sheetName = ws.Name
-                    changeLog = ""
                     
-                    ' R列の最終行を取得
                     lastRow = ws.Cells(ws.Rows.Count, "R").End(xlUp).Row
-                    Set checkCol = ws.Range("R1:R" & lastRow)
-                    
-                    For Each cell In checkCol
-                        If cell.Value = "disabled" Then
-                            cell.Value = "numeric"
-                            cell.Font.Color = vbRed
-                            changeLog = changeLog & "disabled→numeric;"
-                        ElseIf cell.Value = "inactive" Then
-                            cell.Value = "numeric"
-                            cell.Font.Color = vbRed
-                            changeLog = changeLog & "inactive→numeric;"
-                        ElseIf cell.Value = "active" Then
-                            cell.Value = "text"
-                            cell.Font.Color = vbRed
-                            changeLog = changeLog & "active→text;"
-                        ElseIf cell.Value = "IME" Then
-                            cell.Value = "inputmode"
-                            changeLog = changeLog & "IME→inputmode;"
+                    For Each c In ws.Range("R1:R" & lastRow)
+                        If c.Value <> "" Then
+                            newVal = ""
+                            logMsg = ""
+                            
+                            Select Case LCase(c.Value)
+                                Case "disabled"
+                                    newVal = "numeric"
+                                    c.Font.Color = vbRed
+                                    logMsg = "disabled → numeric"
+                                Case "inactive"
+                                    newVal = "numeric"
+                                    c.Font.Color = vbRed
+                                    logMsg = "inactive → numeric"
+                                Case "active"
+                                    newVal = "text"
+                                    c.Font.Color = vbRed
+                                    logMsg = "active → text"
+                                Case "ime"
+                                    newVal = "inputmode"
+                                    c.Font.Color = vbBlue
+                                    logMsg = "IME → inputmode"
+                            End Select
+                            
+                            If newVal <> "" Then
+                                c.Value = newVal
+                                cnt = cnt + 1
+                                execWs.Cells(cnt, 1).Value = cnt
+                                execWs.Cells(cnt, 2).Value = wb.Name
+                                execWs.Cells(cnt, 3).Value = ws.Name
+                                execWs.Cells(cnt, 4).Value = logMsg
+                            End If
                         End If
-                    Next cell
+                    Next c
                     
-                    ' 更新履歴シート更新
+                    '--- 更新履歴シート処理
                     On Error Resume Next
-                    Set ws = wb.Sheets("更新履歴")
+                    Set histWs = wb.Sheets("更新履歴")
                     On Error GoTo 0
-                    
-                    If Not ws Is Nothing Then
-                        lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
-                        ws.Cells(lastRow + 1, "A").Value = ws.Cells(lastRow, "A").Value + 1
-                        ws.Cells(lastRow + 1, "B").Value = Date
-                        ws.Cells(lastRow + 1, "C").Value = "Ａ山Ｂ彦"
-                        ws.Cells(lastRow + 1, "D").Value = sheetName
-                        ws.Cells(lastRow + 1, "E").Value = "IMEをinputmodeに変更"
-                    End If
-                    
-                    ' 実行内容シートに記録
-                    If changeLog <> "" Then
-                        writeRow = execWs.Cells(execWs.Rows.Count, 1).End(xlUp).Row + 1
-                        execWs.Cells(writeRow, 1).Value = execNo
-                        execWs.Cells(writeRow, 2).Value = wb.Name
-                        execWs.Cells(writeRow, 3).Value = sheetName
-                        execWs.Cells(writeRow, 4).Value = changeLog
-                        execNo = execNo + 1
+                    If Not histWs Is Nothing Then
+                        histRow = histWs.Cells(histWs.Rows.Count, "B").End(xlUp).Row + 1
+                        histWs.Cells(histRow, 1).Value = histWs.Cells(histRow - 1, 1).Value + 1
+                        histWs.Cells(histRow, 2).Value = Format(Date, "yyyy/mm/dd")
+                        histWs.Cells(histRow, 3).Value = "Ａ山Ｂ彦"
+                        histWs.Cells(histRow, 4).Value = ws.Name
+                        histWs.Cells(histRow, 5).Value = "IMEをinputmodeに変更"
+                        histWs.Rows(histRow).Font.Color = vbRed
                     End If
                     
                 End If
             Next ws
             
             wb.Close SaveChanges:=True
+            Set histWs = Nothing
+            
         End If
-    Next file
+    Next fil
     
-    Application.ScreenUpdating = True
-    Application.EnableEvents = True
-    
-    MsgBox "処理が完了しました"
+    MsgBox "処理が完了しました。"
     
 End Sub
