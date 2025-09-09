@@ -1,130 +1,116 @@
 Option Explicit
 
-Sub フォルダ内ファイル処理()
+Sub IMEコメント変換処理()
+
     Dim fDialog As FileDialog
     Dim folderPath As String
-    Dim fso As Object, folder As Object, file As Object
-    Dim wb As Workbook, ws As Worksheet
-    Dim execWs As Worksheet
-    Dim r As Range, c As Range
+    Dim fso As Object
+    Dim f As Object
+    Dim wb As Workbook
+    Dim ws As Worksheet
+    Dim wsLog As Worksheet
+    Dim targetCell As Range
     Dim lastRow As Long
-    Dim changeLogRow As Long
-    Dim execRow As Long
-    Dim noCounter As Long
-    Dim todayStr As String
-    Dim commentText As String
+    Dim logRow As Long
+    Dim noCnt As Long
+    Dim histWs As Worksheet
+    Dim histLastRow As Long
+    Dim histSheetName As String
     
-    ' 実行内容シートを準備
+    ' 実行内容シートの準備
     On Error Resume Next
-    Set execWs = ThisWorkbook.Sheets("実行内容")
-    If execWs Is Nothing Then
-        Set execWs = ThisWorkbook.Sheets.Add
-        execWs.Name = "実行内容"
+    Set wsLog = ThisWorkbook.Sheets("実行内容")
+    If wsLog Is Nothing Then
+        Set wsLog = ThisWorkbook.Sheets.Add
+        wsLog.Name = "実行内容"
+        wsLog.Range("A1:E1").Value = Array("No", "ブック名", "シート名", "", "")
     End If
     On Error GoTo 0
-    execWs.Cells.ClearContents
-    execWs.Range("A1:D1").Value = Array("No", "ブック名", "シート名", "変更内容")
-    execRow = 2
-    noCounter = 1
     
-    ' フォルダ選択ダイアログ
+    noCnt = 1
+    logRow = wsLog.Cells(wsLog.Rows.Count, 1).End(xlUp).Row + 1
+    
+    ' フォルダ選択
     Set fDialog = Application.FileDialog(msoFileDialogFolderPicker)
-    If fDialog.Show <> -1 Then Exit Sub
-    folderPath = fDialog.SelectedItems(1)
+    If fDialog.Show = -1 Then
+        folderPath = fDialog.SelectedItems(1)
+    Else
+        Exit Sub
+    End If
     
-    ' FSOでファイル走査
     Set fso = CreateObject("Scripting.FileSystemObject")
-    Set folder = fso.GetFolder(folderPath)
     
-    todayStr = Format(Date, "yyyy/m/d")
-    commentText = "「text」（全角入力）「numeric」（半角入力）から選択"
-    
-    For Each file In folder.Files
-        If LCase(fso.GetExtensionName(file)) = "xls" Or LCase(fso.GetExtensionName(file)) = "xlsx" Then
-            Set wb = Workbooks.Open(file.Path)
+    ' フォルダ内のファイルをループ
+    For Each f In fso.GetFolder(folderPath).Files
+        If fso.GetExtensionName(f.Name) = "xls" Or fso.GetExtensionName(f.Name) = "xlsx" Then
             
-            '--- 「画面」を含むシートを処理 ---
-            For Each ws In wb.Worksheets
+            Set wb = Workbooks.Open(f.Path)
+            
+            ' 「画面」を含むシートを検索
+            For Each ws In wb.Sheets
                 If InStr(ws.Name, "画面") > 0 Then
+                    histSheetName = ws.Name
+                    
+                    ' R列を検索
                     lastRow = ws.Cells(ws.Rows.Count, "R").End(xlUp).Row
-                    For Each c In ws.Range("R1:R" & lastRow)
-                        If c.Value <> "" Then
-                            Select Case LCase(c.Value)
-                                Case "ime"
-                                    c.Value = "inputmode"
-                                    c.Font.Color = RGB(0, 176, 240)
-                                    On Error Resume Next
-                                    c.ClearComments
-                                    On Error GoTo 0
-                                    c.AddComment text:=commentText
-                                    With c.Comment.Shape
-                                        .Height = Application.CentimetersToPoints(1.5)
-                                        .Width = Application.CentimetersToPoints(12)
-                                    End With
-                                    With c.Comment.Shape.TextFrame.Characters.Font
-                                        .Size = 14
-                                        .Name = "游ゴシック"
-                                    End With
-                                    execWs.Cells(execRow, 1).Value = noCounter
-                                    execWs.Cells(execRow, 2).Value = wb.Name
-                                    execWs.Cells(execRow, 3).Value = ws.Name
-                                    execWs.Cells(execRow, 4).Value = "IME → inputmode に変更"
-                                    execRow = execRow + 1
-                                    noCounter = noCounter + 1
-                                    
-                                Case "disabled"
-                                    c.Value = "numeric"
-                                    c.Font.Color = vbRed
-                                    execWs.Cells(execRow, 1).Value = noCounter
-                                    execWs.Cells(execRow, 2).Value = wb.Name
-                                    execWs.Cells(execRow, 3).Value = ws.Name
-                                    execWs.Cells(execRow, 4).Value = "disabled → numeric に変更"
-                                    execRow = execRow + 1
-                                    noCounter = noCounter + 1
-                                    
-                                Case "inactive"
-                                    c.Value = "numeric"
-                                    c.Font.Color = vbRed
-                                    execWs.Cells(execRow, 1).Value = noCounter
-                                    execWs.Cells(execRow, 2).Value = wb.Name
-                                    execWs.Cells(execRow, 3).Value = ws.Name
-                                    execWs.Cells(execRow, 4).Value = "inactive → numeric に変更"
-                                    execRow = execRow + 1
-                                    noCounter = noCounter + 1
-                                    
-                                Case "active"
-                                    c.Value = "text"
-                                    c.Font.Color = vbRed
-                                    execWs.Cells(execRow, 1).Value = noCounter
-                                    execWs.Cells(execRow, 2).Value = wb.Name
-                                    execWs.Cells(execRow, 3).Value = ws.Name
-                                    execWs.Cells(execRow, 4).Value = "active → text に変更"
-                                    execRow = execRow + 1
-                                    noCounter = noCounter + 1
-                            End Select
+                    For Each targetCell In ws.Range("R1:R" & lastRow)
+                        If targetCell.Value = "IME" Then
+                            ' コメント削除
+                            On Error Resume Next
+                            targetCell.ClearComments
+                            On Error GoTo 0
+                            
+                            ' コメント作成
+                            targetCell.AddComment _
+                                "「active」「inactive」「disabled」から選択。" & vbCrLf & _
+                                "inputmode は以下に読み替える。" & vbCrLf & vbCrLf & _
+                                "IME　⇒　inputmode" & vbCrLf & _
+                                "active　⇒　なし" & vbCrLf & _
+                                "inactive　⇒　numeric"
+                            
+                            With targetCell.Comment
+                                .Shape.TextFrame.Characters.Font.Size = 14
+                                .Shape.TextFrame.Characters.Font.Name = "游ゴシック"
+                                .Shape.Width = Application.CentimetersToPoints(15)
+                                .Shape.Height = Application.CentimetersToPoints(7.5)
+                            End With
+                            
+                            ' 実行内容に記録
+                            wsLog.Cells(logRow, 1).Value = noCnt
+                            wsLog.Cells(logRow, 2).Value = wb.Name
+                            wsLog.Cells(logRow, 3).Value = ws.Name
+                            logRow = logRow + 1
+                            noCnt = noCnt + 1
                         End If
-                    Next c
+                    Next targetCell
+                    
                 End If
             Next ws
             
-            '--- 更新履歴シートを処理 ---
+            ' 更新履歴シートを処理
             On Error Resume Next
-            Set ws = wb.Sheets("更新履歴")
+            Set histWs = wb.Sheets("更新履歴")
             On Error GoTo 0
-            If Not ws Is Nothing Then
-                lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
-                changeLogRow = lastRow + 1
-                ws.Cells(changeLogRow, 1).Value = ws.Cells(lastRow, 1).Value + 1
-                ws.Cells(changeLogRow, 2).Value = todayStr
-                ws.Cells(changeLogRow, 3).Value = "Ａ山Ｂ彦"
-                ws.Cells(changeLogRow, 4).Value = ws.Name
-                ws.Cells(changeLogRow, 5).Value = "IMEをinputmodeに変更"
-                ws.Rows(changeLogRow).Font.Color = vbRed
+            
+            If Not histWs Is Nothing Then
+                histLastRow = histWs.Cells(histWs.Rows.Count, "B").End(xlUp).Row
+                With histWs
+                    .Cells(histLastRow + 1, "A").Value = .Cells(histLastRow, "A").Value + 1
+                    .Cells(histLastRow + 1, "B").Value = Format(Date, "yyyy/m/d")
+                    .Cells(histLastRow + 1, "C").Value = "Ａ山Ｂ彦"
+                    .Cells(histLastRow + 1, "D").Value = histSheetName
+                    .Cells(histLastRow + 1, "E").Value = "IMEのコメントを変更"
+                    
+                    .Range(.Cells(histLastRow + 1, "A"), .Cells(histLastRow + 1, "E")).Font.Color = vbRed
+                End With
             End If
             
             wb.Close SaveChanges:=True
+            Set histWs = Nothing
+            
         End If
-    Next file
+    Next f
     
-    MsgBox "処理が完了しました。", vbInformation
+    MsgBox "処理が完了しました！", vbInformation
+
 End Sub
