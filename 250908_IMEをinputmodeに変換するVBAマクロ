@@ -1,116 +1,104 @@
 Option Explicit
 
 Sub IMEコメント変換処理()
-
     Dim fDialog As FileDialog
     Dim folderPath As String
-    Dim fso As Object
-    Dim f As Object
-    Dim wb As Workbook
-    Dim ws As Worksheet
-    Dim wsLog As Worksheet
-    Dim targetCell As Range
-    Dim lastRow As Long
-    Dim logRow As Long
-    Dim noCnt As Long
-    Dim histWs As Worksheet
-    Dim histLastRow As Long
-    Dim histSheetName As String
+    Dim fso As Object, f As Object
+    Dim wb As Workbook, ws As Worksheet
+    Dim mainWb As Workbook
+    Dim resultWs As Worksheet
+    Dim lastRow As Long, nextRow As Long
+    Dim cell As Range
+    Dim com As Comment
+    Dim fileName As String
+    Dim no As Long
     
-    ' 実行内容シートの準備
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    ' 実行ブックと記録用シートの準備
+    Set mainWb = ThisWorkbook
     On Error Resume Next
-    Set wsLog = ThisWorkbook.Sheets("実行内容")
-    If wsLog Is Nothing Then
-        Set wsLog = ThisWorkbook.Sheets.Add
-        wsLog.Name = "実行内容"
-        wsLog.Range("A1:E1").Value = Array("No", "ブック名", "シート名", "", "")
-    End If
+    Set resultWs = mainWb.Sheets("実行内容")
     On Error GoTo 0
-    
-    noCnt = 1
-    logRow = wsLog.Cells(wsLog.Rows.Count, 1).End(xlUp).Row + 1
+    If resultWs Is Nothing Then
+        Set resultWs = mainWb.Sheets.Add
+        resultWs.Name = "実行内容"
+        resultWs.Range("A1:E1").Value = Array("No", "ブック名", "シート名", "", "")
+    End If
+    no = Application.WorksheetFunction.CountA(resultWs.Range("A:A"))
     
     ' フォルダ選択
     Set fDialog = Application.FileDialog(msoFileDialogFolderPicker)
-    If fDialog.Show = -1 Then
-        folderPath = fDialog.SelectedItems(1)
-    Else
-        Exit Sub
-    End If
+    If fDialog.Show <> -1 Then Exit Sub
+    folderPath = fDialog.SelectedItems(1)
     
+    ' ファイルシステムオブジェクト
     Set fso = CreateObject("Scripting.FileSystemObject")
     
-    ' フォルダ内のファイルをループ
+    ' フォルダ内のExcelファイルを処理
     For Each f In fso.GetFolder(folderPath).Files
-        If fso.GetExtensionName(f.Name) = "xls" Or fso.GetExtensionName(f.Name) = "xlsx" Then
-            
+        If LCase(fso.GetExtensionName(f.Name)) Like "xls*" Then
             Set wb = Workbooks.Open(f.Path)
+            fileName = wb.Name
             
-            ' 「画面」を含むシートを検索
+            ' 「画面」を含むシート処理
             For Each ws In wb.Sheets
                 If InStr(ws.Name, "画面") > 0 Then
-                    histSheetName = ws.Name
-                    
                     ' R列を検索
-                    lastRow = ws.Cells(ws.Rows.Count, "R").End(xlUp).Row
-                    For Each targetCell In ws.Range("R1:R" & lastRow)
-                        If targetCell.Value = "IME" Then
-                            ' コメント削除
-                            On Error Resume Next
-                            targetCell.ClearComments
-                            On Error GoTo 0
-                            
-                            ' コメント作成
-                            targetCell.AddComment _
+                    For Each cell In ws.Range("R1", ws.Cells(ws.Rows.Count, "R").End(xlUp))
+                        If cell.Value = "IME" Then
+                            ' コメント削除＆追加
+                            If Not cell.Comment Is Nothing Then cell.Comment.Delete
+                            cell.AddComment _
                                 "「active」「inactive」「disabled」から選択。" & vbCrLf & _
                                 "inputmode は以下に読み替える。" & vbCrLf & vbCrLf & _
                                 "IME　⇒　inputmode" & vbCrLf & _
                                 "active　⇒　なし" & vbCrLf & _
                                 "inactive　⇒　numeric"
-                            
-                            With targetCell.Comment
+                            With cell.Comment
                                 .Shape.TextFrame.Characters.Font.Size = 14
                                 .Shape.TextFrame.Characters.Font.Name = "游ゴシック"
-                                .Shape.Width = Application.CentimetersToPoints(15)
                                 .Shape.Height = Application.CentimetersToPoints(7.5)
+                                .Shape.Width = Application.CentimetersToPoints(15)
                             End With
                             
                             ' 実行内容に記録
-                            wsLog.Cells(logRow, 1).Value = noCnt
-                            wsLog.Cells(logRow, 2).Value = wb.Name
-                            wsLog.Cells(logRow, 3).Value = ws.Name
-                            logRow = logRow + 1
-                            noCnt = noCnt + 1
+                            no = no + 1
+                            resultWs.Cells(no, 1).Value = no
+                            resultWs.Cells(no, 2).Value = fileName
+                            resultWs.Cells(no, 3).Value = ws.Name
                         End If
-                    Next targetCell
+                    Next cell
                     
+                    ' 更新履歴シート追記
+                    On Error Resume Next
+                    Dim histWs As Worksheet
+                    Set histWs = wb.Sheets("更新履歴")
+                    On Error GoTo 0
+                    If Not histWs Is Nothing Then
+                        lastRow = histWs.Cells(histWs.Rows.Count, "B").End(xlUp).Row
+                        nextRow = lastRow + 1
+                        With histWs
+                            .Cells(nextRow, 1).Value = .Cells(lastRow, 1).Value + 1
+                            .Cells(nextRow, 2).Value = Format(Date, "yyyy/m/d")
+                            .Cells(nextRow, 3).Value = "Ａ山Ｂ彦"
+                            .Cells(nextRow, 4).Value = ws.Name
+                            .Cells(nextRow, 5).Value = "IMEのコメントを変更"
+                            
+                            ' 赤字
+                            .Range(.Cells(nextRow, 1), .Cells(nextRow, 5)).Font.Color = vbRed
+                        End With
+                    End If
                 End If
             Next ws
             
-            ' 更新履歴シートを処理
-            On Error Resume Next
-            Set histWs = wb.Sheets("更新履歴")
-            On Error GoTo 0
-            
-            If Not histWs Is Nothing Then
-                histLastRow = histWs.Cells(histWs.Rows.Count, "B").End(xlUp).Row
-                With histWs
-                    .Cells(histLastRow + 1, "A").Value = .Cells(histLastRow, "A").Value + 1
-                    .Cells(histLastRow + 1, "B").Value = Format(Date, "yyyy/m/d")
-                    .Cells(histLastRow + 1, "C").Value = "Ａ山Ｂ彦"
-                    .Cells(histLastRow + 1, "D").Value = histSheetName
-                    .Cells(histLastRow + 1, "E").Value = "IMEのコメントを変更"
-                    
-                    .Range(.Cells(histLastRow + 1, "A"), .Cells(histLastRow + 1, "E")).Font.Color = vbRed
-                End With
-            End If
-            
             wb.Close SaveChanges:=True
-            Set histWs = Nothing
-            
         End If
     Next f
     
-    MsgBox "処理が完了しました！", vbInformation
-
+    Application.DisplayAlerts = True
+    Application.ScreenUpdating = True
+    
+    MsgBox "処理が完了しました。", vbInformation
 End Sub
