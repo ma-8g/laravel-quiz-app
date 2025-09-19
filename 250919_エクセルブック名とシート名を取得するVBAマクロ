@@ -21,6 +21,9 @@ Sub ExtractDataFromMultipleFiles()
         Exit Sub
     End If
     
+    '--- ちらつき防止の処理開始 ---
+    Application.ScreenUpdating = False
+    
     '--- 変数の宣言 ---
     Dim destinationWorkbook As Workbook
     Dim destinationSheet As Worksheet
@@ -54,11 +57,15 @@ Sub ExtractDataFromMultipleFiles()
     '--- 6. ユーザーへの通知（処理完了後）---
     MsgBox "データの抽出と転記が完了しました。", vbInformation, "処理完了"
     
-    ' 処理が完了しても、コピー先ファイルは開いたまま
+    '--- ちらつき防止の処理終了 ---
+    Application.ScreenUpdating = True
+    
     Exit Sub
 
 '--- 7. エラーハンドリング ---
 ErrorHandler:
+    ' エラー発生時もちらつき防止を解除する
+    Application.ScreenUpdating = True
     MsgBox "エラーが発生しました: " & Err.Description, vbCritical, "エラー"
 End Sub
 
