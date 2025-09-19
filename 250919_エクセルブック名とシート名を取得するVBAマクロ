@@ -1,0 +1,89 @@
+Sub ExtractDataFromMultipleFiles()
+    
+    '--- 1. パスの指定 ---
+    Dim destinationFilePath As String
+    Dim sourceFolderPath As String
+    
+    ' コピー先のExcelファイルの絶対パスを指定してください
+    destinationFilePath = "C:\Users\YourUser\Desktop\統合ファイル.xlsx"
+    ' コピー元のファイルが格納されているフォルダの絶対パスを指定してください
+    sourceFolderPath = "C:\Users\YourUser\Desktop\対象フォルダ"
+    
+    '--- 6. ユーザーへの通知（処理開始前）---
+    Dim startMessage As String
+    startMessage = "以下の設定で処理を開始します。" & vbCrLf & vbCrLf & _
+                   "コピー先ファイル: " & destinationFilePath & vbCrLf & _
+                   "コピー元フォルダ: " & sourceFolderPath & vbCrLf & vbCrLf & _
+                   "よろしいですか？"
+    
+    If MsgBox(startMessage, vbOKCancel + vbInformation, "処理の開始確認") = vbCancel Then
+        MsgBox "処理をキャンセルしました。", vbExclamation, "処理中断"
+        Exit Sub
+    End If
+    
+    '--- 変数の宣言 ---
+    Dim destinationWorkbook As Workbook
+    Dim destinationSheet As Worksheet
+    Dim sourceFileName As String
+    Dim sourceWorkbook As Workbook
+    Dim sourceSheet As Worksheet
+    Dim lastRow As Long
+    Dim foundRange As Range
+    
+    '--- 2. コピー先のファイルを開く ---
+    On Error GoTo ErrorHandler
+    
+    Set destinationWorkbook = Workbooks.Open(destinationFilePath)
+    Set destinationSheet = destinationWorkbook.Sheets(1)
+    
+    '--- 5. 繰り返し処理 ---
+    sourceFileName = Dir(sourceFolderPath & "\*.xlsx")
+    
+    Do While sourceFileName <> ""
+        
+        ' コピー元フォルダ内にコピー先ファイルと同じ名前のファイルがある場合はスキップ
+        If sourceFileName <> Right(destinationFilePath, Len(destinationFilePath) - InStrRev(destinationFilePath, "\")) Then
+            
+            '--- 2. コピー元のファイルを読み取り専用で開く ---
+            Set sourceWorkbook = Workbooks.Open(sourceFolderPath & "\" & sourceFileName, ReadOnly:=True)
+            
+            '--- 3. データ抽出 ---
+            For Each sourceSheet In sourceWorkbook.Sheets
+                
+                '--- 7. エラーハンドリング ---
+                On Error Resume Next
+                
+                ' A列から「項目一覧」を検索
+                Set foundRange = sourceSheet.Columns("A").Find(What:="項目一覧", LookIn:=xlValues, LookAt:=xlWhole)
+                
+                '--- 4. データ貼り付け ---
+                If Not foundRange Is Nothing Then
+                    lastRow = destinationSheet.Cells(destinationSheet.Rows.Count, "A").End(xlUp).Row
+                    
+                    ' A列にエクセルブック名、B列にシート名を貼り付け
+                    destinationSheet.Cells(lastRow + 1, "A").Value = sourceFileName
+                    destinationSheet.Cells(lastRow + 1, "B").Value = sourceSheet.Name
+                End If
+                
+                On Error GoTo ErrorHandler ' エラーハンドリングを元に戻す
+            Next sourceSheet
+            
+            '--- 2. コピー元のファイルを保存せずに閉じる ---
+            sourceWorkbook.Close SaveChanges:=False
+        
+        End If
+        
+        sourceFileName = Dir()
+    Loop
+    
+    '--- 6. ユーザーへの通知（処理完了後）---
+    MsgBox "データの抽出と転記が完了しました。", vbInformation, "処理完了"
+    
+    ' 処理が完了しても、コピー先ファイルは開いたまま
+    Exit Sub
+
+'--- 7. エラーハンドリング ---
+ErrorHandler:
+    MsgBox "エラーが発生しました: " & Err.Description, vbCritical, "エラー"
+    
+End Sub
