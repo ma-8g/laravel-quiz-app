@@ -37,16 +37,47 @@ Sub ExtractDataFromMultipleFiles()
     Set destinationSheet = destinationWorkbook.Sheets(1)
     
     '--- 5. 繰り返し処理 ---
+    ' .xlsxファイルを対象とする
     sourceFileName = Dir(sourceFolderPath & "\*.xlsx")
-    
     Do While sourceFileName <> ""
+        ProcessFile sourceFolderPath, sourceFileName, destinationSheet, destinationFilePath
+        sourceFileName = Dir()
+    Loop
+    
+    ' .xlsファイルを対象とする
+    sourceFileName = Dir(sourceFolderPath & "\*.xls")
+    Do While sourceFileName <> ""
+        ProcessFile sourceFolderPath, sourceFileName, destinationSheet, destinationFilePath
+        sourceFileName = Dir()
+    Loop
+    
+    '--- 6. ユーザーへの通知（処理完了後）---
+    MsgBox "データの抽出と転記が完了しました。", vbInformation, "処理完了"
+    
+    ' 処理が完了しても、コピー先ファイルは開いたまま
+    Exit Sub
+
+'--- 7. エラーハンドリング ---
+ErrorHandler:
+    MsgBox "エラーが発生しました: " & Err.Description, vbCritical, "エラー"
+End Sub
+
+
+Private Sub ProcessFile(ByVal sourceFolderPath As String, ByVal sourceFileName As String, ByVal destinationSheet As Worksheet, ByVal destinationFilePath As String)
+    Dim sourceWorkbook As Workbook
+    Dim sourceSheet As Worksheet
+    Dim lastRow As Long
+    Dim foundRange As Range
+    
+    ' コピー元フォルダ内にコピー先ファイルと同じ名前のファイルがある場合はスキップ
+    If sourceFileName <> Right(destinationFilePath, Len(destinationFilePath) - InStrRev(destinationFilePath, "\")) Then
         
-        ' コピー元フォルダ内にコピー先ファイルと同じ名前のファイルがある場合はスキップ
-        If sourceFileName <> Right(destinationFilePath, Len(destinationFilePath) - InStrRev(destinationFilePath, "\")) Then
-            
-            '--- 2. コピー元のファイルを読み取り専用で開く ---
-            Set sourceWorkbook = Workbooks.Open(sourceFolderPath & "\" & sourceFileName, ReadOnly:=True)
-            
+        '--- 2. コピー元のファイルを読み取り専用で開く ---
+        On Error Resume Next
+        Set sourceWorkbook = Workbooks.Open(sourceFolderPath & "\" & sourceFileName, ReadOnly:=True)
+        On Error GoTo 0
+        
+        If Not sourceWorkbook Is Nothing Then
             '--- 3. データ抽出 ---
             For Each sourceSheet In sourceWorkbook.Sheets
                 
@@ -65,25 +96,12 @@ Sub ExtractDataFromMultipleFiles()
                     destinationSheet.Cells(lastRow + 1, "B").Value = sourceSheet.Name
                 End If
                 
-                On Error GoTo ErrorHandler ' エラーハンドリングを元に戻す
+                On Error GoTo 0 ' エラーハンドリングを元に戻す
             Next sourceSheet
             
             '--- 2. コピー元のファイルを保存せずに閉じる ---
             sourceWorkbook.Close SaveChanges:=False
-        
+            Set sourceWorkbook = Nothing
         End If
-        
-        sourceFileName = Dir()
-    Loop
-    
-    '--- 6. ユーザーへの通知（処理完了後）---
-    MsgBox "データの抽出と転記が完了しました。", vbInformation, "処理完了"
-    
-    ' 処理が完了しても、コピー先ファイルは開いたまま
-    Exit Sub
-
-'--- 7. エラーハンドリング ---
-ErrorHandler:
-    MsgBox "エラーが発生しました: " & Err.Description, vbCritical, "エラー"
-    
+    End If
 End Sub
