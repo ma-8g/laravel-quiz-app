@@ -1,0 +1,19 @@
+/**
+ * 入力された値から、半角英数字と特定の記号以外の文字をすべて削除します。
+ * * @param {HTMLInputElement} inputElement - 制限を適用したいinput要素
+ */
+function enforceHalfwidth(inputElement) {
+    // 許可する文字の正規表現:
+    // ^: 行頭
+    // [a-zA-Z0-9]: 半角英数字
+    // \-_\.!@#$%\^&\*\(\)\[\]\{\}: 許可する半角記号（必要に応じて調整してください）
+    // ,<>/\\: 許可するその他の記号
+    // +: 1回以上の繰り返し
+    // $: 行末
+    // g: 文字列全体を検索
+    
+    const allowedPattern = /[^a-zA-Z0-9\-_.,!@#$%\^&\*\(\)\[\]\{\}\/<>\\]/g;
+
+    // 許可されていない文字をすべて削除し、値を更新
+    inputElement.value = inputElement.value.replace(allowedPattern, '');
+}
